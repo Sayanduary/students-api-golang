@@ -1,9 +1,14 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
+	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/Sayanduary/students-api-golang.git/internal/config"
 )
@@ -22,10 +27,34 @@ func main() {
 		Addr:    cfg.HttpServer.Addr,
 		Handler: router,
 	}
-	fmt.Println("server running")
-	err := server.ListenAndServe()
-	if err != nil {
-		log.Fatal("failed to start server")
-	}
+	slog.Info("sever started", slog.String("Address:", cfg.HttpServer.Addr))
 
+	// need to implement graceful shutdown
+	// for ongoing process (first process the request then stop)
+
+	done := make(chan os.Signal, 1)
+
+	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil {
+			log.Fatal("failed to start server")
+		}
+	}()
+
+	<-done
+
+	slog.Info("shuting down the server")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	defer cancel()
+
+	err := server.Shutdown(ctx)
+
+	if err != nil {
+		slog.Error("failed to shutdown server", slog.String("error", err.Error()))
+	}
+	slog.Info("server shutdown successfuly")
 }
